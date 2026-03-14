@@ -1,4 +1,5 @@
-PRD.MD
 .env
 venv/
 __pycache__/
+PRD.md
+ARCHITECTURE.md
