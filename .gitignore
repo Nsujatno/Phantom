@@ -1,0 +1,4 @@
+PRD.MD
+.env
+venv/
+__pycache__/

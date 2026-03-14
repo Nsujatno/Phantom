@@ -1,0 +1,1 @@
+Phantom is an autonomous job application agent that scrapes job listings, scores them against your resume, drafts open-ended application answers in your voice, and submits applications via a custom Chrome extension — all without manual intervention. A Notion database serves as a real-time log of everything the agent does.
