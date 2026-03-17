@@ -1,5 +1,6 @@
 import asyncio
 from src.nodes.scraper import async_scrape_jobs
+from src.nodes.scorer import score_jobs
 from src.state.graph_state import PipelineState
 import uvicorn
 import threading
@@ -26,13 +27,21 @@ async def test_run():
     await asyncio.sleep(5)
 
     print("\n--- Starting Scraper Test ---")
-    final_state = await async_scrape_jobs(initial_state)
-    print("\n--- Output ---")
+    scraped_state = await async_scrape_jobs(initial_state)
+    print("\n--- Scraped Output ---")
     
-    if final_state.get("raw_job_listings"):
-        for job in final_state["raw_job_listings"]:
+    if scraped_state.get("raw_job_listings"):
+        for job in scraped_state["raw_job_listings"]:
             print(f"- {job.get('title')} @ {job.get('company')}")
             print(f"  URL: {job.get('url')[:60]}...")
+            
+        print("\n--- Starting Scorer Test ---")
+        final_state = score_jobs(scraped_state)
+        
+        print("\n--- Final Scored Output ---")
+        for scored_job in final_state.get("scored_jobs", []):
+            print(f"- [PASSED] {scored_job.job.title} @ {scored_job.job.company} | Score: {scored_job.score.overall_score}")
+            print(f"  Reasoning: {scored_job.score.reasoning}")
     else:
         print("No jobs found or extraction failed.")
 

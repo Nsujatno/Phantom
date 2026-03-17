@@ -1,0 +1,15 @@
+John Doe
+Software Engineer
+
+Experience:
+- Software Engineer at TechCorp (2021 - Present): Developed backend APIs using Python, FastAPI, and PostgreSQL. Integrated LLMs for automated workflows.
+- Junior Developer at WebSolutions (2019 - 2021): Built React and TypeScript frontends. Managed state with Redux. 
+
+Skills:
+- Languages: Python, TypeScript, JavaScript, SQL
+- Frameworks: FastAPI, React, Node.js, LangChain
+- Tools: Docker, Git, AWS, GCP
+- AI/ML: OpenAI API, Gemini API, prompt engineering
+
+Education:
+B.S. in Computer Science, State University (2019)
