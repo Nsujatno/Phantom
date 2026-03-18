@@ -27,16 +27,18 @@ Phantom is a fully autonomous pipeline that scrapes job listings, scores them ag
 
 ### Pipeline Flow
 
-1. **User Chrome Extension Action** triggers the scrape on Indeed (or supported job boards).
-2. **Extension** extracts an array of raw job listings and sends them to the backend via WebSockets.
-3. **WebSocket Manager (Orchestrator)** receives the array and, for each job, spawns an isolated LangGraph execution.
-4. **Deduplication check** (within graph) queries Notion — skips any job URL already logged.
-5. **Scorer node** scores the job 0–100 against resume — drops anything below 80.
-6. **Extension** opens the job URL in real Chrome, reads the DOM, sends form fields to backend.
-7. **Drafter node** generates answers to open-ended questions per field.
-8. **Validator node** checks answers against few-shot style examples.
-9. **Submission node** extension fills and submits the form.
-10. **Logger node** writes final status back to Notion.
+1. **"Look" (Search Scan)**: User triggers action on Indeed; extension performs a quick scan of search results (titles/URLs).
+2. **Identification & Batch Prep**: Extension sends batch of raw URLs to backend; backend creates "Pending" entries in Notion for deduplication.
+3. **"Leap" (Sequential Deep-Dive)**: For each "Pending" job, the extension autonomously opens the direct job URL in a background/foreground tab.
+4. **Scoring (High Fidelity)**: While on the job page, extension extracts *full* description/DOM. **Scorer node** gives a definitive 0–100 score. Extension shows a "Phantom is analyzing..." spinner.
+5. **Conditional Pivot**:
+    - Score < 80 → End (Notion updated to "Filtered"). Extension closes tab, moves to next job.
+    - Score >= 80 → Notion updated to "Applying". Pipeline continues.
+6. **Form Detection**: Extension captures form fields/DOM from the active application page.
+7. **Drafter node**: Generates answers to open-ended questions using the full job context.
+8. **Validator node**: Checks answers against few-shot style examples.
+9. **Submission node**: Extension fills and clicks "Submit" autonomously.
+10. **Logger node**: Notion updated to "Applied" or "Failed" with timestamp.
 
 ### Kill Switch
 
@@ -142,12 +144,10 @@ Threshold to proceed: **80+**
 
 ### Responsibilities
 
-- Poll Notion for jobs ready for application
-- Open job URLs in real Chrome tab
-- Read DOM and send form fields to FastAPI backend
-- Receive filled answers from backend
-- Fill and submit form autonomously
-- Update Notion status to "Applied" or "Failed" after submission
+- **Sequential Navigation**: Responsible for opening job URLs one by one and maintaining focus.
+- **Thinking UI**: Must display a non-blocking spinner/overlay (e.g., "Phantom is analyzing requirements...") when LLM nodes are processing to prevent "frozen" perception.
+- **High-Fidelity Context**: Captures full page DOM/HTML *after* clicking into the job, ensuring Scorer has 100% of the job text.
+- **Form Handling**: Receives filled answers and interacts with submission buttons.
 
 ### Communication
 
@@ -160,8 +160,9 @@ Threshold to proceed: **80+**
 | Element | Description |
 |---|---|
 | Header | "Auto Job Agent" |
-| Status line | "Applying to [Job Title] @ [Company]" |
-| Counter | "X jobs applied today" |
+| Status line | "Analyzing [Job]..." | "Applying to [Job]..." |
+| Feedback | Spinner while Gemini works | Progress bar/logs |
+| Counter | "X jobs applied today" | Total successful submissions |
 | Stop button | Red — finishes current app then halts pipeline |
 
 ### Form Field Detection

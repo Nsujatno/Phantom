@@ -1,15 +1,15 @@
 # Phantom Project Progress
 
-## 🚀 Current Status: Scoring Node Implemented & Verified
-The "Phantom" autonomous job application pipeline has successfully completed its first two major architectural phases: **Automated Scraping** and **Intelligent Scoring**.
+## 🚀 Current Status: Pivoting to "Look & Leap" Sequential Architecture
+The "Phantom" pipeline is transitioning to a **Sequential "Super Autonomous"** mode. This shift ensures 100% context parity for the Gemini Scorer by navigating directly to each job page before analysis.
 
 ---
 
 ## ✅ Accomplishments
 
 ### 1. Architecture & Design
-- **PRD & ARCHITECTURE.md:** Established a clear roadmap, tech stack (FastAPI, LangGraph, Plasmo, Gemini), and decoupled repository structure.
-- **State Management:** Defined a robust `PipelineState` using TypedDict and Pydantic models to track a job's journey from "Raw Listing" to "Applied".
+- **PRD & ARCHITECTURE.md:** Established the "Look & Leap" hybrid strategy, tech stack, and sequential navigation requirements.
+- **State Management:** Defined `PipelineState` (TypedDict/Pydantic) to track jobs from "Pending" (Look) to "Applied" (Leap).
 
 ### 2. Chrome Extension (The "Eyes")
 - **Plasmo Framework:** Initialized a React-based extension for high-speed development.
@@ -42,7 +42,7 @@ The "Phantom" autonomous job application pipeline has successfully completed its
 ---
 
 ## ⏭ Next Steps
-1.  **Drafter Node:** Implement Gemini-powered answer generation for open-ended application questions using the extension's DOM-reading capabilities.
-2.  **Validator Node:** Add few-shot tone validation to ensure AI-generated answers match Nathan's personal voice.
-3.  **Real Notion Integration:** Replace the mock logger with actual Notion API calls for persistent tracking.
-4.  **Submission Node:** Orchestrate the extension to fill and click "Submit" on job boards.
+1.  **Sequential Navigation Logic:** Implement the "Leap" phase where the extension autonomously opens job URLs for high-fidelity DOM extraction.
+2.  **"Thinking" UI Spinner:** Add a visual indicator to the extension popup for the scoring/analysis phase.
+3.  **Real Notion Integration:** Implement persistent logging with "Pending", "Filtered", and "Applying" statuses for crash recovery.
+4.  **Drafter & Submission Nodes:** Orchestrate answer generation and autonomous form filling on the active job page.

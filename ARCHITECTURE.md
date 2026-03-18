@@ -1,11 +1,11 @@
 # Phantom Architecture & Folder Structure
 
 ## Understanding Summary
-*   **What is being built:** "Phantom" — a fully autonomous, LangGraph-orchestrated job application pipeline that handles scraping (via Chrome Extension), resume scoring, answer drafting, and form submission.
-*   **Why it exists:** To completely automate the job hunting process for Software Engineer roles with strict Pydantic validation, agentic reasoning, and high observability.
-*   **Who it is for:** Personal use (starting as a local tool, with plans to host the backend in v2).
-*   **Key constraints:** Integrating a custom Chrome Extension (for scraping and DOM reading/submission) with a local FastAPI backend via WebSockets. Relies on LangGraph for state management, Notion API for logging, and Gemini 2.5 for reasoning.
-*   **Explicit non-goals:** Not targeting LinkedIn in v1, no manual application flows, and not a generic job board aggregator.
+*   **What is being built:** "Phantom" — a high-fidelity, autonomous job application agent that uses a "Look & Leap" sequential architecture to scrape, score, and apply to jobs on Indeed.
+*   **Why it exists:** To automate job hunting with 100% context parity (reading the full job page) and high observability via Notion.
+*   **Who it is for:** Personal use (local FastAPI backend + Chrome Extension).
+*   **Key constraints:** Sequential navigation (one job at a time) to ensure Gemini Scorer has the full job description. Real-time Notion updates for cross-session reliability.
+*   **Explicit non-goals:** No bulk/batch scoring without full page context in v1. No LinkedIn support in v1.
 
 ## Assumptions
 *   **Database/State Layer:** No persistent local database is required for v1; in-memory LangGraph state and Notion logs are sufficient.
@@ -16,8 +16,9 @@
 | Decision | Alternatives Considered | Rationale |
 | :--- | :--- | :--- |
 | **Decoupled Repositories** | Monorepo (backend and extension in one root). | Keeps backend deployment separate from the client (extension), enforcing a strict API boundary and simplifying the mental model. |
-| **Plasmo Framework (React)** | Standard React + Webpack/Vite custom config. | Provides a "Next.js-like" developer experience for Chrome extensions with out-of-the-box hot reloading and simplified manifest management. Avoids fragile custom Webpack configurations for extensions. |
-| **`src/` Layout for Backend** | Flat structure (no `src/` directory). | Standard Python best practice. Prevents import errors during testing, keeps the root directory clean of configuration files, and separates application logic strictly. |
+| **Plasmo Framework (React)** | Standard React + Webpack/Vite custom config. | Provides a "Next.js-like" developer experience for Chrome extensions with out-of-the-box hot reloading. |
+| **"Look & Leap" Architecture** | Batch Scraping (scoring snippets from search results). | Sequential navigation ("Leaping") to each job page ensures the Gemini Scorer has 100% context. Batch scoring often misses fine-print requirements found only on the full job page. |
+| **`src/` Layout for Backend** | Flat structure (no `src/` directory). | Standard Python best practice. Prevents import errors and separates logic strictly. |
 
 ---
 
