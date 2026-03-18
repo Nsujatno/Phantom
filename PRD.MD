@@ -76,12 +76,12 @@ class JobApplicationState(TypedDict):
 | Drafter | Extension reads DOM, Gemini 2.5 Flash generates answers per field |
 | Validator | Gemini 2.5 Flash checks answers against few-shot examples |
 | Submission | Extension fills and submits form |
-| Logger | Writes final application status to Notion |
+| Logger | Writes final application status to Notion (both successful and filtered jobs) |
 
 ### Conditional Edges
 
-- Score < 80 → end (logged as "Filtered" in Notion)
-- Validator status = "flagged" → skip submission, log as "Flagged", move to next job
+- Score < 80 → routes to Logger (logged as "Filtered"), then End
+- Validator status = "flagged" → skip submission, route to Logger (logged as "Flagged"), then End
 - Pipeline status = "stopped" → finish current job, halt
 
 ---

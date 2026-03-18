@@ -44,10 +44,12 @@ phantom-backend/
 │   │   └── graph_state.py   # JobApplicationState TypedDict definition (Single-Job)
 │   ├── nodes/               # LangGraph operational nodes
 │   │   ├── __init__.py
+│   │   ├── scraper.py       # Triggers initial job board search via extension
+│   │   ├── extractor.py     # Navigates to individual job URLs for full text
 │   │   ├── scorer.py        # Gemini Flash Lite resume scoring
 │   │   ├── drafter.py       # Gemini Flash answer generation
 │   │   ├── validator.py     # Gemini Flash tone/logic validation
-│   │   └── logger.py        # Notion API integration
+│   │   └── logger.py        # Notion API integration (Centralized logging for all outcomes)
 │   ├── graph.py             # LangGraph compilation (edges, conditional logic)
 │   └── main.py              # Application entry point
 ├── tests/                   # Pytest directory

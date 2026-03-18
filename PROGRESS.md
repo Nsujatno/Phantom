@@ -49,7 +49,8 @@ The "Phantom" pipeline has successfully transitioned to a **Sequential "Super Au
 ---
 
 ## ⏭ Next Steps
-1.  **Real Notion Integration:** Replace the mock logger with real Notion API calls for persistent status tracking.
-2.  **Duplicate Detection (Caching):** Add a database/cache layer to skip jobs that have already been scrapped or leaped to in previous runs.
-3.  **"Thinking" UI Spinner:** Add a visual indicator to the extension popup for the scoring/analysis phase.
-4.  **Drafter & Submission Nodes:** Orchestrate answer generation and autonomous form filling on the active job page.
+1.  **Refactor Graph Architecture (Conditional Edges):** Remove the mock logger from the `scorer` node and implement LangGraph conditional edges to route filtered jobs directly to the centralized `logger` node.
+2.  **Real Notion Integration:** Replace the mock logger with real Notion API calls for persistent status tracking.
+3.  **Duplicate Detection (Caching):** Add a database/cache layer to skip jobs that have already been scraped or leaped to in previous runs.
+4.  **"Thinking" UI Spinner:** Add a visual indicator to the extension popup for the scoring/analysis phase.
+5.  **Drafter & Submission Nodes:** Orchestrate answer generation and autonomous form filling on the active job page.
