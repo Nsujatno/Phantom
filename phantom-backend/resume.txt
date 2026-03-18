@@ -1,15 +1,20 @@
-John Doe
-Software Engineer
-
+Nathan Sujatno
 Experience:
-- Software Engineer at TechCorp (2021 - Present): Developed backend APIs using Python, FastAPI, and PostgreSQL. Integrated LLMs for automated workflows.
-- Junior Developer at WebSolutions (2019 - 2021): Built React and TypeScript frontends. Managed state with Redux. 
+- Backend Project Lead & Frontend Developer at NRVE Intern, Remote (June 2025 – August 2025): Architected and deployed a serverless backend on AWS (Lambda, API Gateway, S3) and MongoDB with scalable RESTful API endpoints in Python. Cut database query latency by over 95% via AWS CloudFront caching. Integrated backend services with the mobile application frontend.
+
+Projects:
+- SWE Job Matcher (November 2025): Built a multi-step autonomous agent using LLM Tool Use to orchestrate async web scraping and resume analysis in parallel. Engineered a Chain-of-Thought + Pydantic evaluation framework for strict LLM output scoring. Reduced multi-step inference latency by 80% via concurrent execution pipeline.
+- KanbanSync, HackUTD (November 2025): Built a multi-source retrieval system routing queries to distinct vector spaces for dynamic and static knowledge, preventing hallucinations. Developed a self-correcting LLM validation loop for datacenter state cross-referencing. Automated incident prioritization via JSON-enforced Chain-of-Thought ticket classification.
+- MeteorMate (June 2025 – Current): Built a responsive Next.js UI with reusable Tailwind CSS components. Architected a serverless backend using Firebase auth and Supabase for scalable RESTful endpoints.
+
+Leadership:
+- Project Manager at AI MD (September 2025 – December 2025): Led a student team building a full-stack MERN app with a custom-trained AI model. Managed timelines, delegated tasks, and mentored team members.
+- ACM Officer (May 2025 – Current) | ACM TIP (September 2025 – December 2025) | ACM Member (February 2025 – May 2025)
 
 Skills:
-- Languages: Python, TypeScript, JavaScript, SQL
-- Frameworks: FastAPI, React, Node.js, LangChain
-- Tools: Docker, Git, AWS, GCP
-- AI/ML: OpenAI API, Gemini API, prompt engineering
+- Languages: Python (Asyncio, Pydantic), C++, JavaScript/TypeScript, SQL
+- AI & Agents: LangChain, RAG, Vector Databases, LLM Tool Use, Prompt Engineering (Chain-of-Thought), Embeddings
+- Backend & Data: FastAPI, Node.js, MongoDB, Crawl4AI, REST APIs
+- Frontend & Tools: React, Tailwind CSS, AWS, Git, Postman
 
-Education:
-B.S. in Computer Science, State University (2019)
+Education: B.S. in Computer Science, The University of Texas at Dallas, Richardson, TX (Expected May 2027) | GPA: 3.87 | Academic Excellence Scholar, Hobson Wildenthal Honors College

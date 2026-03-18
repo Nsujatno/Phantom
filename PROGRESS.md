@@ -1,7 +1,7 @@
 # Phantom Project Progress
 
-## 🚀 Current Status: Pivoting to "Look & Leap" Sequential Architecture
-The "Phantom" pipeline is transitioning to a **Sequential "Super Autonomous"** mode. This shift ensures 100% context parity for the Gemini Scorer by navigating directly to each job page before analysis.
+## 🚀 Current Status: "Look & Leap" Sequential Architecture is LIVE
+The "Phantom" pipeline has successfully transitioned to a **Sequential "Super Autonomous"** mode. Scraped jobs now trigger automatic extraction of full descriptions by navigating to each job page before analysis.
 
 ---
 
@@ -25,8 +25,15 @@ The "Phantom" pipeline is transitioning to a **Sequential "Super Autonomous"** m
     - Added **Tenacity** retry logic for LLM reliability.
     - Built a **Notion Mock Logger** for real-time terminal feedback on job statuses.
 
+### 4. The "Leap" (Full Page Extraction)
+- **High-Fidelity Extraction:** Implemented the "Leap" phase where the backend instructs the extension to navigate to each job URL to scrape the full description.
+- **Reliability Fix (Service Worker Safety):** Replaced fragile message-passing (`sendMessage`) with `chrome.scripting.executeScript` for robust data retrieval even when the service worker is dormant.
+- **Extension Permissions:** Declared `"scripting"` and `"tabs"` permissions to enable autonomous DOM interaction.
+- **Graceful Timeouts:** Added 90-second safety timeouts to extraction requests in the backend to prevent hanging if the extension fails.
+
 ### 4. Verification & Testing
 - **End-to-End Scraper Test:** Successfully verified the flow where the extension scrapes Indeed and the backend scores the listings.
+- **Look & Leap Integration:** Confirmed the pipeline can handle multiple jobs sequentially, pulling thousands of characters of context for the scorer.
 - **Filtering Logic:** Confirmed that jobs below the 80/100 threshold are correctly filtered out, while high-match roles (e.g., scoring 90/100) are passed forward for drafting.
 
 ---
@@ -42,7 +49,7 @@ The "Phantom" pipeline is transitioning to a **Sequential "Super Autonomous"** m
 ---
 
 ## ⏭ Next Steps
-1.  **Sequential Navigation Logic:** Implement the "Leap" phase where the extension autonomously opens job URLs for high-fidelity DOM extraction.
-2.  **"Thinking" UI Spinner:** Add a visual indicator to the extension popup for the scoring/analysis phase.
-3.  **Real Notion Integration:** Implement persistent logging with "Pending", "Filtered", and "Applying" statuses for crash recovery.
+1.  **Real Notion Integration:** Replace the mock logger with real Notion API calls for persistent status tracking.
+2.  **Duplicate Detection (Caching):** Add a database/cache layer to skip jobs that have already been scrapped or leaped to in previous runs.
+3.  **"Thinking" UI Spinner:** Add a visual indicator to the extension popup for the scoring/analysis phase.
 4.  **Drafter & Submission Nodes:** Orchestrate answer generation and autonomous form filling on the active job page.

@@ -1,11 +1,54 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 export const config: PlasmoCSConfig = {
-    matches: ["https://*.indeed.com/jobs*"],
+    matches: ["https://*.indeed.com/jobs*", "https://*.indeed.com/viewjob*", "https://*.indeed.com/rc/clk*"],
     run_at: "document_idle"
 }
 
 console.log("Extractor content script injected on Indeed.");
+
+async function waitForJobDescription(timeoutMs: number = 60000): Promise<string> {
+    return new Promise((resolve) => {
+        const getDesc = () => {
+            const descEl = document.querySelector("#jobDescriptionText") ||
+                document.querySelector(".jobsearch-JobComponent-description") ||
+                document.querySelector(".jobsearch-jobDescriptionText");
+            return descEl ? (descEl as HTMLElement).innerText.trim() : "";
+        };
+
+        const existing = getDesc();
+        if (existing) return resolve(existing);
+
+        const observer = new MutationObserver(() => {
+            const current = getDesc();
+            if (current) {
+                observer.disconnect();
+                clearTimeout(timeoutId);
+                resolve(current);
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        const timeoutId = setTimeout(() => {
+            observer.disconnect();
+            resolve(getDesc());
+        }, timeoutMs);
+    });
+}
+
+async function extractFullJobDetails() {
+    console.log("Extracting high-fidelity job details...");
+    const description = await waitForJobDescription();
+
+    chrome.runtime.sendMessage({
+        action: "extracted_job_details",
+        details: {
+            full_description: description,
+            url: window.location.href
+        }
+    });
+}
 
 async function waitForJobCards(timeoutMs: number = 120000): Promise<NodeListOf<Element>> {
     return new Promise((resolve) => {
@@ -54,7 +97,9 @@ async function extractJobs() {
 
     const jobs = [];
 
-    jobCards.forEach(card => {
+    // Don't delete this line, for ease of testing
+    Array.from(jobCards).slice(0, 2).forEach(card => {
+        // jobCards.forEach(card => {
         try {
             const titleEl = card.querySelector(".jcs-JobTitle span") || card.querySelector(".jcs-JobTitle");
             const title = titleEl ? (titleEl as HTMLElement).innerText.trim() : "Unknown Title";
@@ -98,5 +143,10 @@ async function extractJobs() {
     });
 }
 
-// Run the script
-extractJobs();
+// Main execution entry point
+const url = window.location.href;
+if (url.includes("/viewjob") || url.includes("/rc/clk")) {
+    extractFullJobDetails();
+} else if (url.includes("/jobs")) {
+    extractJobs();
+}

@@ -3,6 +3,7 @@ from src.models.schemas import ScoredJob, Job, DraftedAnswer, ValidationResult
 
 class PipelineState(TypedDict):
     raw_job_listings: list[dict]
+    enriched_job_listings: list[dict]
     scored_jobs: list[ScoredJob]
     current_job: Job | None
     form_fields: list[str]

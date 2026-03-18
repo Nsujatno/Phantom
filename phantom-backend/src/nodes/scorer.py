@@ -33,14 +33,14 @@ Resume:
 Job Listing:
 Title: {job.get('title')}
 Company: {job.get('company')}
-Description Snippet: {job.get('description_snippet', 'N/A')}
+Full Description: {job.get('full_description', 'N/A')}
 
 Scoring Rubric (Total 100 points):
 - Skill overlap with resume (0-33 points)
 - Years of experience required (0-33 points)
 - Tech stack match (0-34 points)
 
-Calculate the points for each category based on how well the candidate matches the job listing snippet. 
+Calculate the points for each category based on how well the candidate matches the job listing. 
 Sum them up for the `overall_score`. Provide a brief reasoning for your scores.
 """
     # .with_structured_output ensures it returns a JobScore Pydantic object
@@ -54,9 +54,9 @@ def score_jobs(state: PipelineState) -> PipelineState:
     state["run_log"].append("Scoring jobs started.")
     print("\n--- Scoring Jobs ---")
     
-    raw_jobs = state.get("raw_job_listings", [])
-    if not raw_jobs:
-        print("No raw jobs to score.")
+    enriched_jobs = state.get("enriched_job_listings", [])
+    if not enriched_jobs:
+        print("No enriched jobs to score.")
         return state
 
     # Load resume
@@ -83,7 +83,7 @@ def score_jobs(state: PipelineState) -> PipelineState:
 
     scored_jobs_list = []
     
-    for job_dict in raw_jobs:
+    for job_dict in enriched_jobs:
         try:
             print(f"Scoring: {job_dict.get('title')} @ {job_dict.get('company')}...")
             score: JobScore = get_job_score(llm, resume_text, job_dict)
@@ -113,7 +113,7 @@ def score_jobs(state: PipelineState) -> PipelineState:
     state["run_log"].append(f"Scoring complete. {len(scored_jobs_list)} jobs passed.")
     print(f"--- Scoring Complete. {len(scored_jobs_list)} passed. ---")
     
-    # We clear the raw_job_listings to signify they have been processed
-    state["raw_job_listings"] = []
+    # We clear the enriched_job_listings to signify they have been processed
+    state["enriched_job_listings"] = []
 
     return state

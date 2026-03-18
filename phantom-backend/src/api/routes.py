@@ -29,10 +29,16 @@ async def websocket_scraper(websocket: WebSocket):
             payload = json.loads(data)
             
             if payload.get("status") == "success" and "data" in payload:
-                manager.resolve_scrape(payload["data"])
+                if payload.get("type") == "job_details":
+                    manager.resolve_job_details(payload["data"])
+                else:
+                    manager.resolve_scrape(payload["data"])
             elif payload.get("status") == "error":
                 print(f"Extension reported an error: {payload.get('message')}")
-                manager.resolve_scrape([]) # Resolve with empty to avoid hanging
+                if payload.get("type") == "job_details":
+                    manager.resolve_job_details({})
+                else:
+                    manager.resolve_scrape([]) # Resolve with empty to avoid hanging
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
