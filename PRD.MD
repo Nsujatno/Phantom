@@ -71,17 +71,21 @@ class JobApplicationState(TypedDict):
 
 | Node | Responsibility |
 |---|---|
-| Scorer | Gemini 2.5 Flash Lite scores each job, logs to Notion immediately |
-| Router | Conditional edge — drops jobs below 80, passes rest to drafter |
+| Scraper | Initial "Look" — Scrapes job board search results in batch via extension |
+| Extractor | "Leap" — Navigates to each job URL to extract 100% of the description |
+| Scorer | Gemini 2.5 Flash Lite scores each job against resume/criteria |
+| Router | Conditional edge — routes to End if score < 80, else proceeds |
 | Drafter | Extension reads DOM, Gemini 2.5 Flash generates answers per field |
 | Validator | Gemini 2.5 Flash checks answers against few-shot examples |
 | Submission | Extension fills and submits form |
-| Logger | Writes final application status to Notion (both successful and filtered jobs) |
+| Logger | Centralized Notion API node — updates status and scores for all outcomes |
 
 ### Conditional Edges
 
 - Score < 80 → routes to Logger (logged as "Filtered"), then End
+- Score >= 80 → routes to Drafter, then Validator
 - Validator status = "flagged" → skip submission, route to Logger (logged as "Flagged"), then End
+- Status = "applied" → route to Logger, then End
 - Pipeline status = "stopped" → finish current job, halt
 
 ---
@@ -203,7 +207,7 @@ Pending → Applied
 
 ### Deduplication
 
-Before processing any job, query Notion by URL. If URL already exists in any status, skip.
+Before processing any job, the `NotionService` queries the database by URL. If a matching URL is found, the existing page is updated with the new score and status (e.g., re-evaluating a previously "Pending" job). If no match is found, a new entry is created. This ensures no duplicate rows exist for the same job posting.
 
 ---
 

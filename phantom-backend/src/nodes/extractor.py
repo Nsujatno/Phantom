@@ -1,5 +1,6 @@
 from src.state.graph_state import PipelineState
 from src.api.socket_manager import manager
+from src.services.notion_service import NotionService
 import asyncio
 
 async def extract_job_details(state: PipelineState) -> PipelineState:
@@ -13,11 +14,19 @@ async def extract_job_details(state: PipelineState) -> PipelineState:
         return state
         
     enriched_jobs_list = state.get("enriched_job_listings", [])
+    notion = NotionService()
 
     for job_dict in raw_jobs:
         url = job_dict.get("url")
         if not url:
             print(f"Skipping job without URL: {job_dict.get('title')}")
+            continue
+            
+        # Check if job already exists in Notion
+        existing_id = notion.find_page_by_url(url)
+        if existing_id:
+            print(f"Skipping already processed job: {job_dict.get('title')} @ {job_dict.get('company')}")
+            state["run_log"].append(f"Skipped duplicate job: {job_dict.get('title')}")
             continue
             
         print(f"Leaping to: {job_dict.get('title')} @ {job_dict.get('company')}...")

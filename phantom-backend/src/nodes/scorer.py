@@ -1,6 +1,4 @@
-import os
 from pathlib import Path
-from pydantic import ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -8,19 +6,7 @@ from src.state.graph_state import PipelineState
 from src.models.schemas import JobScore, ScoredJob, Job
 from src.core.config import settings
 
-# Mock Notion Logger
-def log_to_notion_mock(job: dict, status: str, score: JobScore | None = None):
-    """
-    Mocks the requirement to 'log to Notion immediately'.
-    In a real implementation, this would use the Notion API.
-    """
-    title = job.get("title", "Unknown")
-    company = job.get("company", "Unknown")
-    score_val = score.overall_score if score else "N/A"
-    print(f"[NOTION MOCK] Logged Job: {title} @ {company} | Status: {status} | Score: {score_val}")
 
-
-# Retry up to 3 times on general exceptions or Pydantic validation errors
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_job_score(llm: ChatGoogleGenerativeAI, resume_text: str, job: dict) -> JobScore:
     prompt = f"""
@@ -40,80 +26,71 @@ Scoring Rubric (Total 100 points):
 - Years of experience required (0-33 points)
 - Tech stack match (0-34 points)
 
-Calculate the points for each category based on how well the candidate matches the job listing. 
+Calculate the points for each category based on how well the candidate matches the job listing.
 Sum them up for the `overall_score`. Provide a brief reasoning for your scores.
 """
-    # .with_structured_output ensures it returns a JobScore Pydantic object
     structured_llm = llm.with_structured_output(JobScore)
     result = structured_llm.invoke(prompt)
     return result
 
 
 def score_jobs(state: PipelineState) -> PipelineState:
-    """Scores jobs against resume and filters them."""
-    state["run_log"].append("Scoring jobs started.")
-    print("\n--- Scoring Jobs ---")
-    
-    enriched_jobs = state.get("enriched_job_listings", [])
-    if not enriched_jobs:
-        print("No enriched jobs to score.")
+    """Scores the current_job_dict against the resume."""
+    job_dict = state.get("current_job_dict")
+    if not job_dict:
+        print("No current job to score.")
         return state
+
+    print(f"--- Scoring: {job_dict.get('title')} @ {job_dict.get('company')} ---")
 
     # Load resume
     resume_path = Path(__file__).parent.parent.parent / "resume.txt"
     try:
         resume_text = resume_path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        print("resume.txt not found! Please create it in the phantom-backend root.")
+        print("resume.txt not found!")
         state["run_log"].append("Scoring failed: resume.txt missing.")
+        state["current_score"] = None
         return state
 
     # Initialize Gemini
-    # Ensure GEMINI_API_KEY is in the environment
     try:
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash", # fallback to flash since flash-lite might not be available in all regions or might have a different identifier
+            model="gemini-2.5-flash-lite",
             api_key=settings.GEMINI_API_KEY,
-            temperature=0.1
+            temperature=1,
         )
     except Exception as e:
         print(f"Failed to initialize Gemini LLM: {e}")
         state["run_log"].append("Scoring failed: LLM init error.")
+        state["current_score"] = None
         return state
 
-    scored_jobs_list = []
-    
-    for job_dict in enriched_jobs:
-        try:
-            print(f"Scoring: {job_dict.get('title')} @ {job_dict.get('company')}...")
-            score: JobScore = get_job_score(llm, resume_text, job_dict)
-            
-            if score.overall_score >= 80:
-                print(f"  -> Passed! (Score: {score.overall_score})")
-                log_to_notion_mock(job_dict, "Pending", score)
-                
-                # Convert to Pydantic objects for the state
-                job_obj = Job(
-                    title=job_dict.get("title", ""),
-                    company=job_dict.get("company", ""),
-                    url=job_dict.get("url", "")
-                )
-                scored_job = ScoredJob(job=job_obj, score=score)
-                scored_jobs_list.append(scored_job)
-            else:
-                print(f"  -> Filtered. (Score: {score.overall_score})")
-                log_to_notion_mock(job_dict, "Filtered", score)
+    try:
+        score: JobScore = get_job_score(llm, resume_text, job_dict)
+        state["current_score"] = score
 
-        except Exception as e:
-            print(f"  -> Failed to score: {e}")
-            log_to_notion_mock(job_dict, "Error Scoring")
-            state["run_log"].append(f"Error scoring {job_dict.get('title')}: {e}")
+        if score.overall_score >= 80:
+            print(f"  -> Passed! (Score: {score.overall_score})")
+            job_obj = Job(
+                title=job_dict.get("title", ""),
+                company=job_dict.get("company", ""),
+                url=job_dict.get("url", ""),
+            )
+            state["current_job"] = job_obj
+            scored_job = ScoredJob(job=job_obj, score=score)
+            state["scored_jobs"].append(scored_job)
+        else:
+            print(f"  -> Filtered. (Score: {score.overall_score})")
+            state["current_job"] = None
 
-    state["scored_jobs"].extend(scored_jobs_list)
-    state["run_log"].append(f"Scoring complete. {len(scored_jobs_list)} jobs passed.")
-    print(f"--- Scoring Complete. {len(scored_jobs_list)} passed. ---")
-    
-    # We clear the enriched_job_listings to signify they have been processed
-    state["enriched_job_listings"] = []
+    except Exception as e:
+        print(f"  -> Failed to score: {e}")
+        state["run_log"].append(f"Error scoring {job_dict.get('title')}: {e}")
+        state["current_score"] = None
+        state["current_job"] = None
 
+    state["run_log"].append(
+        f"Scored: {job_dict.get('title')} — {state.get('current_score').overall_score if state.get('current_score') else 'Error'}"
+    )
     return state
