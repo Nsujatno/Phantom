@@ -7,6 +7,7 @@ let isConnecting = false;
 // Store tab IDs to know how to process their messages
 let activeScrapeTabId: number | null = null;
 let activeReadTabId: number | null = null;
+let activeApplyTabId: number | null = null;
 
 function connectWebSocket() {
     if (isConnecting || (socket && socket.readyState === WebSocket.OPEN)) return;
@@ -34,6 +35,9 @@ function connectWebSocket() {
             } else if (data.action === "read_job_page" && data.url) {
                 console.log("Leaping to job page:", data.url);
                 handleReadJobPage(data.url);
+            } else if (data.action === "start_apply" && data.url) {
+                console.log("Starting auto-apply for:", data.url);
+                handleAutoApply(data.url);
             }
         } catch (e) {
             console.error("Failed to parse WS message:", e);
@@ -116,6 +120,57 @@ async function handleReadJobPage(url: string) {
     }
 }
 
+async function handleAutoApply(url: string) {
+    let tabId: number | null = null;
+    try {
+        const tab = await chrome.tabs.create({ url, active: true });
+        tabId = tab.id ?? null;
+        activeApplyTabId = tabId;
+
+        if (!tabId) {
+            throw new Error("Tab creation returned no ID.");
+        }
+
+        // Wait for the tab to report status "complete"
+        await new Promise<void>((resolve) => {
+            chrome.tabs.onUpdated.addListener(function listener(updatedId, changeInfo) {
+                if (updatedId === tabId && changeInfo.status === "complete") {
+                    chrome.tabs.onUpdated.removeListener(listener);
+                    resolve();
+                }
+            });
+        });
+
+        console.log("Tab loaded. Waiting 2s for DOM and content script injection...");
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Signal content script to extract and fill!
+        // The content script (content_apply) listens for "extract_and_fill"
+        const result = await chrome.tabs.sendMessage(tabId, { action: "extract_and_fill" });
+        console.log("Apply result from content script:", result);
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                status: "success",
+                type: "apply_result",
+                data: result
+            }));
+        }
+        
+    } catch (err) {
+        console.error("handleAutoApply failed:", err);
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                status: "error",
+                type: "apply_result",
+                message: String(err),
+            }));
+        }
+    } finally {
+        activeApplyTabId = null;
+    }
+}
+
 /**
  * Runs INSIDE the job page tab via executeScript.
  * MUST be self-contained — no closures over background script variables allowed.
@@ -143,9 +198,8 @@ function extractJobDescriptionFromPage(): { full_description: string; url: strin
     };
 }
 
-// Listen for messages from content scripts — only used for the scrape phase now.
-// The leap (read_job_page) phase uses executeScript directly and does NOT use sendMessage.
-chrome.runtime.onMessage.addListener((request, sender) => {
+// Listen for messages from content scripts
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "extracted_jobs") {
         console.log("Received jobs from content script:", request.jobs);
 
@@ -161,6 +215,21 @@ chrome.runtime.onMessage.addListener((request, sender) => {
             chrome.tabs.remove(sender.tab.id);
             activeScrapeTabId = null;
         }
+    } else if (request.action === "DO_BACKEND_APPLY") {
+        console.log("Routing DO_BACKEND_APPLY to backend:", request.payload);
+        fetch("http://localhost:8000/apply-step", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(request.payload)
+        })
+        .then(res => {
+            if (!res.ok) throw new Error(`Backend err: ${res.statusText}`);
+            return res.json();
+        })
+        .then(data => sendResponse({ answers: data.answers }))
+        .catch(err => sendResponse({ error: String(err) }));
+        
+        return true; // Keep message channel open for async response
     }
     // "extracted_job_details" is intentionally NOT handled here any more — see handleReadJobPage.
 });

@@ -26,3 +26,21 @@ class Job(BaseModel):
 class ScoredJob(BaseModel):
     job: Job
     score: JobScore
+
+class SerializedField(BaseModel):
+    phantom_id: str
+    name: str | None = None
+    type: str
+    value: str | None = None
+    placeholder: str | None = None
+    label: str | None = None
+    required: bool | None = False
+    options: list[str] | None = None
+
+class ApplyStepRequest(BaseModel):
+    page_url: str | None = None
+    page_title: str | None = None
+    fields: list[SerializedField]
+
+class ApplyStepResponse(BaseModel):
+    answers: dict[str, str | bool | list[str]]

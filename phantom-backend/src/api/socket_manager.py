@@ -8,6 +8,7 @@ class ConnectionManager:
         self.active_connection: Optional[WebSocket] = None
         self.scraper_future: Optional[asyncio.Future] = None
         self.job_details_future: Optional[asyncio.Future] = None
+        self.apply_future: Optional[asyncio.Future] = None
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -80,5 +81,30 @@ class ConnectionManager:
         if self.job_details_future and not self.job_details_future.done():
             loop = self.job_details_future.get_loop()
             loop.call_soon_threadsafe(self.job_details_future.set_result, data)
+
+    async def request_autonomous_apply(self, url: str) -> dict:
+        """Called by the LangGraph node to navigate and start the application loop."""
+        if not self.active_connection:
+            raise RuntimeError("Cannot request apply: Extension is not connected.")
+
+        # Create a new future to wait for the result
+        loop = asyncio.get_running_loop()
+        self.apply_future = loop.create_future()
+
+        # Send the request to the extension
+        await self.send_message({"action": "start_apply", "url": url})
+
+        # Wait for the extension to finish (no timeout since applying takes time)
+        try:
+            return await asyncio.wait_for(self.apply_future, timeout=600.0)
+        except asyncio.TimeoutError:
+            print(f"Apply request timed out for {url}")
+            return {"status": "error", "message": "timed out after 10 minutes"}
+
+    def resolve_apply(self, data: dict):
+        """Called when the extension sends the apply result back."""
+        if self.apply_future and not self.apply_future.done():
+            loop = self.apply_future.get_loop()
+            loop.call_soon_threadsafe(self.apply_future.set_result, data)
 
 manager = ConnectionManager()

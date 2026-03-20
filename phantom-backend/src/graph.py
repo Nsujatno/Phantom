@@ -4,8 +4,7 @@ from src.nodes.scraper import scrape_jobs
 from src.nodes.extractor import extract_job_details
 from src.nodes.selector import select_next_job
 from src.nodes.scorer import score_jobs
-from src.nodes.drafter import draft_answers
-from src.nodes.validator import validate_answers
+from src.nodes.applier import apply_to_job
 from src.nodes.logger import log_to_notion
 
 
@@ -20,19 +19,11 @@ def route_after_select(state: PipelineState) -> str:
 
 def route_after_score(state: PipelineState) -> str:
     """
-    If the job passed scoring (score >= 80), proceed to drafting.
+    If the job passed scoring (score >= 80), proceed to applying.
     Otherwise, skip to the logger to immediately log 'Filtered'.
     """
     if state.get("current_job") is not None:
-        return "draft"
-    return "log"
-
-
-def route_after_validate(state: PipelineState) -> str:
-    """
-    After validation, always proceed to logging.
-    The logger node reads validation_result to determine final status.
-    """
+        return "apply"
     return "log"
 
 
@@ -50,8 +41,7 @@ workflow.add_node("scrape", scrape_jobs)
 workflow.add_node("extract", extract_job_details)
 workflow.add_node("select", select_next_job)
 workflow.add_node("score", score_jobs)
-workflow.add_node("draft", draft_answers)
-workflow.add_node("validate", validate_answers)
+workflow.add_node("apply", apply_to_job)
 workflow.add_node("log", log_to_notion)
 
 # Edges: batch phase
@@ -66,20 +56,15 @@ workflow.add_conditional_edges(
     {"score": "score", END: END},
 )
 
-# Conditional: score -> draft (passed) or log (filtered)
+# Conditional: score -> apply (passed) or log (filtered)
 workflow.add_conditional_edges(
     "score",
     route_after_score,
-    {"draft": "draft", "log": "log"},
+    {"apply": "apply", "log": "log"},
 )
 
-# Linear: draft -> validate -> log
-workflow.add_edge("draft", "validate")
-workflow.add_conditional_edges(
-    "validate",
-    route_after_validate,
-    {"log": "log"},
-)
+# Linear: apply -> log
+workflow.add_edge("apply", "log")
 
 # Loop back: log -> select (next job)
 workflow.add_conditional_edges(

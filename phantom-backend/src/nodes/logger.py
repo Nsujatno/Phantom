@@ -15,17 +15,15 @@ def log_to_notion(state: PipelineState) -> PipelineState:
         return state
 
     score = state.get("current_score")
-    validation = state.get("validation_result")
+    app_status = state.get("application_status")
 
     # Determine status
     if not score or score.overall_score < 80:
         status = "Filtered"
-    elif validation and validation.status == "fail":
-        status = "Validation Failed"
-    elif validation and validation.status == "flagged":
-        status = "Flagged"
-    elif state.get("applied_successfully"): # Placeholder for future application step
+    elif app_status == "success":
         status = "Applied"
+    elif app_status == "failure":
+        status = "Application Failed"
     else:
         status = "Pending"
 
@@ -33,7 +31,6 @@ def log_to_notion(state: PipelineState) -> PipelineState:
         job=job_dict,
         status=status,
         score=score,
-        drafted_answers=state.get("drafted_answers"),
         date_applied=state.get("date_applied"), # Pass if provided in state
     )
 

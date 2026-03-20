@@ -98,7 +98,7 @@ async function extractJobs() {
     const jobs = [];
 
     // Don't delete this line, for ease of testing
-    Array.from(jobCards).slice(0, 2).forEach(card => {
+    Array.from(jobCards).slice(0, 1).forEach(card => {
         // jobCards.forEach(card => {
         try {
             const titleEl = card.querySelector(".jcs-JobTitle span") || card.querySelector(".jcs-JobTitle");

@@ -70,7 +70,7 @@ def score_jobs(state: PipelineState) -> PipelineState:
         score: JobScore = get_job_score(llm, resume_text, job_dict)
         state["current_score"] = score
 
-        if score.overall_score >= 80:
+        if score.overall_score >= 10:
             print(f"  -> Passed! (Score: {score.overall_score})")
             job_obj = Job(
                 title=job_dict.get("title", ""),

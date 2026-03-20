@@ -19,6 +19,17 @@
 | **Plasmo Framework (React)** | Standard React + Webpack/Vite custom config. | Provides a "Next.js-like" developer experience for Chrome extensions with out-of-the-box hot reloading. |
 | **"Look & Leap" Architecture** | Batch Scraping (scoring snippets from search results). | Sequential navigation ("Leaping") to each job page ensures the Gemini Scorer has 100% context. Batch scoring often misses fine-print requirements found only on the full job page. |
 | **`src/` Layout for Backend** | Flat structure (no `src/` directory). | Standard Python best practice. Prevents import errors and separates logic strictly. |
+| **Frontend-Driven Applying Loop** | Backend-driven loop via WebSockets or LangGraph `interrupt`. | Makes the backend stateless (relying on checkpointer for memory) and makes the Chrome extension the orchestrator of page navigation, which is resilient to page reloads and simpler to implement. |
+
+---
+
+## Applying Phase Data Flow (v1)
+
+1. **Trigger:** The Extension iterates through jobs that passed the "Look & Leap" scoring phase.
+2. **Navigate & Extract:** The Extension navigates to the job application URL and extracts the DOM of the active form page.
+3. **Draft & Validate:** The Extension POSTs the DOM to a new backend endpoint (e.g., `/api/apply-step`). The backend LangGraph uses a checkpointer (where `thread_id` = `job_id`) to track multi-page conversation history, drafts answers based on `resume.txt`, and validates them.
+4. **Inject & Next:** The Extension receives a JSON mapping of `field_id: value`, injects them into the DOM, and clicks "Next".
+5. **Completion:** Steps 2-4 repeat until the extension detects the final "Submit/Review" page, where it pauses for manual user review and avoids auto-submission.
 
 ---
 
