@@ -1,7 +1,9 @@
 # Phantom Project Progress
 
-## 🚀 Current Status: "Look & Leap" Sequential Architecture is LIVE
-The "Phantom" pipeline has successfully transitioned to a **Sequential "Super Autonomous"** mode. Scraped jobs now trigger automatic extraction of full descriptions by navigating to each job page before analysis.
+## 🚀 Current Status: Autonomous Form Filling In Progress
+The "Phantom" pipeline has successfully transitioned to a **Sequential "Super Autonomous"** mode. Scraped jobs now trigger automatic extraction of full descriptions by navigating to each job page before analysis. 
+
+We have successfully set up the flow so that the backend can read the site and click the "apply now" button. However, we are currently blocked on radio buttons not being clicked, as the question text is not being properly passed to the backend.
 
 ---
 
@@ -21,7 +23,6 @@ The "Phantom" pipeline has successfully transitioned to a **Sequential "Super Au
 - **Gemini 2.5 Flash Integration:** Scorer node uses strict Pydantic output validation with 100-point rubric.
 - **Notion Service (Live):** Replaced mock logging with real Notion API integration.
 - **Duplicate Detection:** Built-in URL-based deduplication in Notion to prevent redundant entries.
-- **Notion Client Resiliency:** Fixed `AttributeError` and `400 Bad Request` issues with the latest `notion_client` (3.x) by forcing the `2022-06-28` API version.
 
 ### 4. Verification
 - **End-to-End Flow:** Verified batch scraping → sequential extraction → scoring → Notion logging with duplicate detection.
@@ -39,8 +40,8 @@ The "Phantom" pipeline has successfully transitioned to a **Sequential "Super Au
 ---
 
 ## ⏭ Next Steps
-1.  **"Thinking" UI Spinner:** Add a visual indicator to the extension popup for the scoring/analysis phase.
+1.  **Extract Radio Button Context:** Fix the issue where radio button questions are not being passed to the backend, blocking them from being clicked.
 2.  **Drafter & Submission Nodes:** Orchestrate answer generation and autonomous form filling on the active job page.
-3.  **Tone Validation:** Implement the `Validator` node using few-shot examples.
-4.  **Kill Switch UI:** Complete the red "Stop" button functionality in the extension.
-
+3.  **"Thinking" UI Spinner:** Add a visual indicator to the extension popup for the scoring/analysis phase.
+4.  **Tone Validation:** Implement the `Validator` node using few-shot examples.
+5.  **Kill Switch UI:** Complete the red "Stop" button functionality in the extension.

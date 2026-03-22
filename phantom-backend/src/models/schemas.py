@@ -43,4 +43,7 @@ class ApplyStepRequest(BaseModel):
     fields: list[SerializedField]
 
 class ApplyStepResponse(BaseModel):
+    page_type: Literal["form", "review", "success", "unknown"] | None = None
+    reasoning: str | None = None
     answers: dict[str, str | bool | list[str]]
+    next_action_id: str | None = None

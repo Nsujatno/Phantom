@@ -226,7 +226,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (!res.ok) throw new Error(`Backend err: ${res.statusText}`);
             return res.json();
         })
-        .then(data => sendResponse({ answers: data.answers }))
+        .then(data => sendResponse(data))
         .catch(err => sendResponse({ error: String(err) }));
         
         return true; // Keep message channel open for async response

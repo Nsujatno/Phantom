@@ -58,7 +58,7 @@ def score_jobs(state: PipelineState) -> PipelineState:
         llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash-lite",
             api_key=settings.GEMINI_API_KEY,
-            temperature=1,
+            temperature=0,
         )
     except Exception as e:
         print(f"Failed to initialize Gemini LLM: {e}")

@@ -11,7 +11,7 @@ from rich.table import Table
 
 console = Console()
 
-def print_application_receipt(url: str, title: str, answers: dict, fields: list):
+def print_application_receipt(url: str, title: str, answers: dict, fields: list, next_action_id: str = None, page_type: str = None, reasoning: str = None):
     table = Table(title="Generated Answers", show_header=True, header_style="bold magenta")
     table.add_column("Field ID", style="dim", width=20)
     table.add_column("Label / Placeholder", width=30)
@@ -28,12 +28,15 @@ def print_application_receipt(url: str, title: str, answers: dict, fields: list)
 
     panel = Panel(
         table,
-        title=f"[bold green]Phantom Auto-Apply Started[/bold green]",
+        title=f"[bold green]Phantom Auto-Apply Step ({page_type or 'Unknown'})[/bold green]",
         subtitle=f"URL: [link={url}]{url}[/link] | Page: {title}",
         expand=False
     )
     console.print()
     console.print(panel)
+    if reasoning:
+        console.print(f"[cyan]Reasoning:[/cyan] {reasoning}")
+    console.print(f"[cyan]Next Action ID:[/cyan] {next_action_id or 'None'}")
     console.print()
 
 def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
@@ -50,7 +53,7 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
         resume_text = ""
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",
+        model="gemini-2.5-flash",
         api_key=settings.GEMINI_API_KEY,
         temperature=0, # Low temperature for accurate field matching
     )
@@ -58,16 +61,18 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
     structured_llm = llm.with_structured_output(ApplyStepResponse)
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are an AI assistant helping a user apply to jobs. Your task is to fill out job application forms automatically.\n\n"
+        ("system", "You are an AI assistant helping a user apply to jobs. Your task is to fill out job application forms automatically and navigate to the next step.\n\n"
                    "USER RESUME:\n{resume}\n\n"
                    "INSTRUCTIONS:\n"
-                   "1. You will be provided with a JSON list of form fields extracted from the current page of the application.\n"
-                   "2. For each field, provide the best answer based on the user's resume.\n"
-                   "3. Return a dictionary mapping the field's `phantom_id` to the corresponding answer.\n"
-                   "4. For radio buttons or dropdowns, make sure your answer matches one of the provided `options`.\n"
-                   "5. If you do not know the answer to a required question, provide a polite, reasonable placeholder (e.g. '0' for salary, or 'Will discuss during interview').\n"
-                   "6. Output EXACTLY the `ApplyStepResponse` schema, which contains a dictionary mapping the `phantom_id` string to the answer string/bool/list."),
-        ("user", "PAGE TITLE: {page_title}\n\nFORM FIELDS:\n{fields}")
+                   "1. You will receive a JSON list of form fields and actionable buttons/links extracted from the current page.\n"
+                   "2. Identify the `page_type` (e.g. 'form' for input pages, 'review' for reviewing data, 'success' for completion, or 'unknown').\n"
+                   "3. Provide `reasoning` for your choices.\n"
+                   "4. For each input field, provide the best answer based on the resume. Return a dictionary mapping the field's `phantom_id` to the corresponding answer in `answers`.\n"
+                   "5. For radio buttons or dropdowns, ensure your answer matches one of the provided `options`.\n"
+                   "6. Provide polite placeholders for required unknown questions (e.g., '0' for salary, or 'Will discuss during interview').\n"
+                   "7. Identify the most appropriate button or link to click to proceed to the next step, and return its `phantom_id` in `next_action_id`. Examples of proceed buttons: 'Next', 'Continue', 'Submit', 'Apply'. Do not select 'Back' or 'Cancel'.\n"
+                   "8. Output EXACTLY the `ApplyStepResponse` schema."),
+        ("user", "PAGE TITLE: {page_title}\n\nFORM FIELDS AND ACTIONS:\n{fields}")
     ])
     
     chain = prompt | structured_llm
@@ -83,19 +88,25 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
     try:
         url = request.page_url or "Unknown URL"
         title = request.page_title or "Unknown Page"
-        print_application_receipt(url, title, response.answers, request.fields)
-        
-        notion = NotionService()
-        job_dict = {
-            "title": title,
-            "company": "Application Auto-Fill",
-            "url": url
-        }
-        notion.log_job(
-            job=job_dict,
-            status="Applied",
-            date_applied=datetime.now(timezone.utc)
+        print_application_receipt(
+            url, title, response.answers, request.fields, 
+            next_action_id=response.next_action_id, 
+            page_type=response.page_type,
+            reasoning=response.reasoning
         )
+        
+        if response.page_type == "success":
+            notion = NotionService()
+            job_dict = {
+                "title": title,
+                "company": "Application Auto-Fill",
+                "url": url
+            }
+            notion.log_job(
+                job=job_dict,
+                status="Applied",
+                date_applied=datetime.now(timezone.utc)
+            )
     except Exception as e:
         console.print(f"[red]Error printing receipt or logging to Notion: {e}[/red]")
     

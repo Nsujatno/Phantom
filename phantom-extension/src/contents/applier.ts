@@ -41,62 +41,112 @@ interface SerializedField {
 }
 
 /**
- * Sweeps the DOM for inputs, generates IDs, and creates a JSON representation.
+ * Sweeps the DOM for inputs and buttons, generates IDs, and creates a JSON representation.
  */
 function extractFormFields(): { pageTitle: string, fields: SerializedField[] } {
     console.log("Extracting form fields for Phantom...");
-    const inputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+    const elements = document.querySelectorAll('input:not([type="hidden"]), select, textarea, button, a');
     
     const fields: SerializedField[] = [];
     let idCounter = 1;
 
-    inputs.forEach((inputEl: Element) => {
-        // Skip hidden inputs, buttons, submits etc
-        const type = inputEl.getAttribute('type');
-        if (type && ["submit", "button", "hidden", "image"].includes(type.toLowerCase())) {
+    elements.forEach((el: Element) => {
+        const tagName = el.tagName.toLowerCase();
+        let type = el.getAttribute('type') || "";
+
+        if (tagName === "input" && type.toLowerCase() === "hidden") {
             return;
         }
 
+        if (tagName === "a") {
+            const text = (el as HTMLElement).innerText?.toLowerCase() || "";
+            const role = el.getAttribute("role");
+            const className = el.className.toLowerCase();
+            
+            const isActionable = 
+                role === "button" || 
+                className.includes("btn") || 
+                className.includes("button") ||
+                text.includes("apply") || 
+                text.includes("next") || 
+                text.includes("submit") || 
+                text.includes("continue");
+                
+            if (!isActionable) {
+                return;
+            }
+            type = "link";
+        }
+
         const phantomId = `phantom-field-${idCounter++}`;
-        inputEl.setAttribute('data-phantom-id', phantomId);
+        el.setAttribute('data-phantom-id', phantomId);
 
         let labelText = "";
 
-        // 1. Check for standard <label for="...">
-        const id = inputEl.getAttribute("id");
-        if (id) {
-            const labelEl = document.querySelector(`label[for="${id}"]`);
-            if (labelEl) labelText = (labelEl as HTMLElement).innerText;
+        if (tagName === "button" || tagName === "a" || (tagName === "input" && ["submit", "button"].includes(type.toLowerCase()))) {
+            labelText = (el as HTMLElement).innerText || el.getAttribute("value") || el.getAttribute("aria-label") || "";
+        } else {
+            // 1. Check for standard <label for="...">
+            const id = el.getAttribute("id");
+            if (id) {
+                const labelEl = document.querySelector(`label[for="${id}"]`);
+                if (labelEl) labelText = (labelEl as HTMLElement).innerText;
+            }
+
+            // 2. Check for wrapping <label>
+            if (!labelText) {
+                const wrapper = el.closest("label");
+                if (wrapper) labelText = (wrapper as HTMLElement).innerText;
+            }
+
+            // 3. Fallback to aria-label
+            if (!labelText) {
+                labelText = el.getAttribute("aria-label") || "";
+            }
+            
+            // Fallback to placeholder or name
+            if (!labelText) {
+                labelText = el.getAttribute("placeholder") || el.getAttribute("name") || "Unknown Field";
+            }
+
+            // Context Extraction for radio and checkboxes
+            if (tagName === "input" && (type.toLowerCase() === "radio" || type.toLowerCase() === "checkbox")) {
+                const container = el.closest('fieldset, div[role="group"], div[role="radiogroup"], .form-group, tr, li, .application-question');
+                if (container) {
+                    const legend = container.querySelector('legend');
+                    let questionText = "";
+                    if (legend) {
+                        questionText = (legend as HTMLElement).innerText.trim();
+                    } else {
+                        // Fallback: use the first line of the container's innerText
+                        questionText = (container as HTMLElement).innerText.trim().split('\n')[0];
+                    }
+                    
+                    // Only append if it seems like a valid question and not just the label itself
+                    if (questionText && questionText.length < 200 && questionText !== labelText) {
+                        labelText = `Question: ${questionText} | Option: ${labelText}`;
+                    }
+                }
+            }
         }
 
-        // 2. Check for wrapping <label>
-        if (!labelText) {
-            const wrapper = inputEl.closest("label");
-            if (wrapper) labelText = wrapper.innerText;
-        }
-
-        // 3. Fallback to aria-label
-        if (!labelText) {
-            labelText = inputEl.getAttribute("aria-label") || "";
-        }
+        const isRequired = el.hasAttribute('required') || el.getAttribute('aria-required') === 'true';
         
-        // Fallback to placeholder or name
-        if (!labelText) {
-            labelText = inputEl.getAttribute("placeholder") || inputEl.getAttribute("name") || "Unknown Field";
+        let componentType = tagName;
+        if (tagName === "input") {
+            componentType = type || "text";
         }
 
-        const isRequired = inputEl.hasAttribute('required') || inputEl.getAttribute('aria-required') === 'true';
-        
         const fieldData: SerializedField = {
             phantom_id: phantomId,
-            type: inputEl.tagName.toLowerCase() === "input" ? (type || "text") : inputEl.tagName.toLowerCase(),
+            type: componentType,
             label: labelText.trim(),
             required: isRequired
         };
 
         // Extract options for selects
-        if (inputEl.tagName.toLowerCase() === "select") {
-            const options = Array.from(inputEl.querySelectorAll('option')).map(opt => (opt as HTMLOptionElement).innerText.trim());
+        if (tagName === "select") {
+            const options = Array.from(el.querySelectorAll('option')).map(opt => (opt as HTMLOptionElement).innerText.trim());
             fieldData.options = options.filter(o => o.length > 0);
         }
         
@@ -110,29 +160,42 @@ function extractFormFields(): { pageTitle: string, fields: SerializedField[] } {
 }
 
 /**
- * Fills the DOM based on a mapping of { phantom_id: string_value }
+ * Fills the DOM based on a mapping of { phantom_id: string_value } and clicks next_action_id
  */
-function fillFormFields(answers: Record<string, string>) {
-    console.log("Phantom is filling fields:", answers);
-    for (const [phantomId, value] of Object.entries(answers)) {
-        const el = document.querySelector(`[data-phantom-id="${phantomId}"]`);
-        if (!el) {
-            console.warn(`Could not find element for ${phantomId}`);
-            continue;
-        }
+function fillFormFields(response: any) {
+    if (response.answers) {
+        console.log("Phantom is filling fields:", response.answers);
+        for (const [phantomId, value] of Object.entries(response.answers)) {
+            const el = document.querySelector(`[data-phantom-id="${phantomId}"]`);
+            if (!el) {
+                console.warn(`Could not find element for ${phantomId}`);
+                continue;
+            }
 
-        if (el instanceof HTMLInputElement && (el.type === 'radio' || el.type === 'checkbox')) {
-            const shouldCheck = value === 'true' || value === 'checked' || value === 'Yes';
-            el.checked = shouldCheck;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-        } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
-            el.value = value;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
+            if (el instanceof HTMLInputElement && (el.type === 'radio' || el.type === 'checkbox')) {
+                const shouldCheck = value === 'true' || value === 'checked' || value === 'Yes';
+                el.checked = shouldCheck;
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+            } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+                el.value = value as string;
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            // Mark as filled so we don't process it again
+            el.setAttribute('data-phantom-filled', 'true');
         }
-        // Mark as filled so we don't process it again
-        el.setAttribute('data-phantom-filled', 'true');
+    }
+
+    if (response.next_action_id) {
+        console.log("Phantom is clicking next action:", response.next_action_id);
+        const el = document.querySelector(`[data-phantom-id="${response.next_action_id}"]`);
+        if (el && el instanceof HTMLElement) {
+            el.click();
+            el.setAttribute('data-phantom-filled', 'true');
+        } else {
+            console.warn(`Could not find button to click: ${response.next_action_id}`);
+        }
     }
 }
 
@@ -140,24 +203,29 @@ function fillFormFields(answers: Record<string, string>) {
 async function autoProcessForm() {
     if (isProcessing) return;
     
-    // Check if there are unfilled inputs
-    const unfilledInputs = document.querySelectorAll('input:not([type="hidden"]):not([data-phantom-filled="true"]), select:not([data-phantom-filled="true"]), textarea:not([data-phantom-filled="true"])');
-    // Only process if we have a reasonable number of inputs to fill (e.g. > 0)
-    // Sometimes Indeed has a search bar at top, we want to be careful. But let's assume if we are on apply page, we fill.
-    // To be safe, let's only do it if the page URL contains apply or if there are specific apply related elements, 
-    // or just if there's > 0 unfilled inputs.
-    if (unfilledInputs.length === 0) return;
+    // Check if there are unfilled inputs or unclicked buttons
+    const actionableElements = document.querySelectorAll('input:not([type="hidden"]):not([data-phantom-filled="true"]), select:not([data-phantom-filled="true"]), textarea:not([data-phantom-filled="true"]), button:not([data-phantom-filled="true"]), a:not([data-phantom-filled="true"])');
+    if (actionableElements.length === 0) return;
 
-    // Filter out buttons/submits
-    const validInputs = Array.from(unfilledInputs).filter(el => {
-        const type = el.getAttribute('type');
-        return !(type && ["submit", "button", "hidden", "image"].includes(type.toLowerCase()));
+    // Filter to valid elements (actionable links or other elements)
+    const validElements = Array.from(actionableElements).filter(el => {
+        const tagName = el.tagName.toLowerCase();
+        if (tagName === "a") {
+            const text = (el as HTMLElement).innerText?.toLowerCase() || "";
+            const role = el.getAttribute("role");
+            const className = el.className.toLowerCase();
+            return role === "button" || className.includes("btn") || className.includes("button") || text.includes("apply") || text.includes("next") || text.includes("submit") || text.includes("continue");
+        }
+        return true;
     });
 
-    if (validInputs.length === 0) return;
+    if (validElements.length === 0) return;
 
     isProcessing = true;
-    console.log(`Found ${validInputs.length} unfilled inputs. Triggering auto-fill...`);
+    console.log(`Found ${validElements.length} unfilled/unclicked actionable elements. Triggering auto-fill...`);
+
+    // Mark these as evaluated to prevent infinite loops if the LLM decides not to interact with them
+    validElements.forEach(el => el.setAttribute('data-phantom-filled', 'true'));
 
     try {
         const data = extractFormFields();
@@ -176,8 +244,8 @@ async function autoProcessForm() {
                 "indeed.com"
             ].some(domain => urlLow.includes(domain));
             
-            // If it's not a known ATS and doesn't explicitly look like a job page with enough fields, skip it
-            if (!isKnownATS && (!hasJobKeywords || validInputs.length < 3)) {
+            // If it's not a known ATS and doesn't explicitly look like a job page, skip it
+            if (!isKnownATS && !hasJobKeywords) {
                 console.log("Phantom Applier: Does not look like a job application page (missed heuristic). Skipping trigger.");
                 return;
             }
@@ -193,8 +261,8 @@ async function autoProcessForm() {
                 }
             });
 
-            if (response && response.answers) {
-                fillFormFields(response.answers);
+            if (response && (response.answers || response.next_action_id)) {
+                fillFormFields(response);
             } else if (response && response.error) {
                 console.error("Phantom Auto-Fill Backend Error:", response.error);
             }
@@ -206,8 +274,10 @@ async function autoProcessForm() {
     }
 }
 
-// Run initially
-setTimeout(autoProcessForm, 2000);
+// Run initially after a short delay to let the page settle
+setTimeout(autoProcessForm, 2500);
+
+let observerTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // Set up MutationObserver to detect new form steps in SPAs
 const observer = new MutationObserver((mutations) => {
@@ -219,8 +289,11 @@ const observer = new MutationObserver((mutations) => {
         }
     }
     if (shouldCheck) {
-        // Debounce the check
-        setTimeout(autoProcessForm, 1000);
+        if (observerTimeout) {
+            clearTimeout(observerTimeout);
+        }
+        // True debounce: Wait for 2 seconds of DOM inactivity before processing
+        observerTimeout = setTimeout(autoProcessForm, 2000);
     }
 });
 
@@ -232,7 +305,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const data = extractFormFields();
         sendResponse(data);
     } else if (message.action === "FILL_FIELDS") {
-        fillFormFields(message.answers);
+        fillFormFields(message.response || message);
         sendResponse({ success: true });
     } else if (message.action === "extract_and_fill") {
         autoProcessForm().then(() => sendResponse({ success: true })).catch(err => sendResponse({ error: String(err) }));
