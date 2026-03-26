@@ -20,13 +20,19 @@ async def apply_to_job(state: PipelineState) -> PipelineState:
         # This will block until the extension sends a status message "apply_result"
         result = await manager.request_autonomous_apply(url)
         print(f"  -> Application result from extension: {result}")
-        state["run_log"].append(f"Apply result: {result.get('status')}")
+        result_status = result.get("status")
+        state["run_log"].append(f"Apply result: {result_status}")
+
+        if result_status == "navigating":
+            state["application_status"] = "pending"
+        elif result_status in {"filled", "success"}:
+            state["application_status"] = "success"
+        else:
+            state["application_status"] = "failure"
         
     except Exception as e:
         print(f"  -> Error leaping to apply to {job_dict.get('title')}: {e}")
         state["run_log"].append(f"Error applying to {job_dict.get('title')}: {e}")
-
-    # For now, unconditionally mark as success to keep pipeline moving
-    state["application_status"] = "success"
+        state["application_status"] = "failure"
     
     return state

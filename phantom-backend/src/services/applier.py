@@ -1,10 +1,8 @@
 from pathlib import Path
-from datetime import datetime, timezone
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from src.models.schemas import ApplyStepRequest, ApplyStepResponse
 from src.core.config import settings
-from src.services.notion_service import NotionService
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -12,28 +10,53 @@ from rich.table import Table
 console = Console()
 
 def print_application_receipt(url: str, title: str, answers: dict, fields: list, next_action_id: str = None, page_type: str = None, reasoning: str = None):
-    table = Table(title="Generated Answers", show_header=True, header_style="bold magenta")
-    table.add_column("Field ID", style="dim", width=20)
-    table.add_column("Label / Placeholder", width=30)
-    table.add_column("Type", width=10)
-    table.add_column("Answer", style="green")
-
     fields_map = {f.phantom_id: f for f in fields}
+
+    extracted_table = Table(title="Extracted Fields", show_header=True, header_style="bold cyan")
+    extracted_table.add_column("Field ID", style="dim", width=20)
+    extracted_table.add_column("Label / Placeholder", width=40)
+    extracted_table.add_column("Type", width=12)
+    extracted_table.add_column("Required", width=8)
+    extracted_table.add_column("Options", width=30)
+
+    for field in fields:
+        label = field.label or field.placeholder or field.name or "Unknown"
+        options = ", ".join(field.options or [])
+        if field.phantom_id == next_action_id:
+            label = f"{label} [SELECTED ACTION]"
+        extracted_table.add_row(
+            field.phantom_id,
+            label,
+            field.type,
+            "yes" if field.required else "no",
+            options
+        )
+
+    answers_table = Table(title="Generated Answers", show_header=True, header_style="bold magenta")
+    answers_table.add_column("Field ID", style="dim", width=20)
+    answers_table.add_column("Label / Placeholder", width=40)
+    answers_table.add_column("Type", width=12)
+    answers_table.add_column("Answer", style="green")
 
     for f_id, ans in answers.items():
         field = fields_map.get(f_id)
         label = field.label or field.placeholder or field.name or "Unknown" if field else "Unknown"
         f_type = field.type if field else "Unknown"
-        table.add_row(f_id, label, f_type, str(ans))
+        answers_table.add_row(f_id, label, f_type, str(ans))
 
-    panel = Panel(
-        table,
-        title=f"[bold green]Phantom Auto-Apply Step ({page_type or 'Unknown'})[/bold green]",
-        subtitle=f"URL: [link={url}]{url}[/link] | Page: {title}",
-        expand=False
-    )
+    if not answers:
+        answers_table.add_row("-", "No input answers returned", "-", "-")
+
     console.print()
-    console.print(panel)
+    console.print(
+        Panel(
+            f"URL: [link={url}]{url}[/link] | Page: {title}",
+            title=f"[bold green]Phantom Auto-Apply Step ({page_type or 'Unknown'})[/bold green]",
+            expand=False
+        )
+    )
+    console.print(extracted_table)
+    console.print(answers_table)
     if reasoning:
         console.print(f"[cyan]Reasoning:[/cyan] {reasoning}")
     console.print(f"[cyan]Next Action ID:[/cyan] {next_action_id or 'None'}")
@@ -68,7 +91,7 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
                    "2. Identify the `page_type` (e.g. 'form' for input pages, 'review' for reviewing data, 'success' for completion, or 'unknown').\n"
                    "3. Provide `reasoning` for your choices.\n"
                    "4. For each input field, provide the best answer based on the resume. Return a dictionary mapping the field's `phantom_id` to the corresponding answer in `answers`.\n"
-                   "5. For radio buttons or dropdowns, ensure your answer matches one of the provided `options`.\n"
+                   "5. For radio buttons or dropdowns, ensure your answer matches one of the provided `options`. Radio options may be represented as separate fields that share the same options list; choose the single `phantom_id` that corresponds to the desired option and return only that selected option.\n"
                    "6. Provide polite placeholders for required unknown questions (e.g., '0' for salary, or 'Will discuss during interview').\n"
                    "7. Identify the most appropriate button or link to click to proceed to the next step, and return its `phantom_id` in `next_action_id`. Examples of proceed buttons: 'Next', 'Continue', 'Submit', 'Apply'. Do not select 'Back' or 'Cancel'.\n"
                    "8. Output EXACTLY the `ApplyStepResponse` schema."),
@@ -78,6 +101,7 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
     chain = prompt | structured_llm
     
     fields_dump = [field.model_dump() for field in request.fields]
+    console.print(f"[cyan]Sending {len(fields_dump)} extracted fields to LLM[/cyan]")
     
     response = chain.invoke({
         "resume": resume_text,
@@ -94,21 +118,7 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
             page_type=response.page_type,
             reasoning=response.reasoning
         )
-        
-        if response.page_type == "success":
-            notion = NotionService()
-            job_dict = {
-                "title": title,
-                "company": "Application Auto-Fill",
-                "url": url
-            }
-            notion.log_job(
-                job=job_dict,
-                status="Applied",
-                date_applied=datetime.now(timezone.utc)
-            )
     except Exception as e:
-        console.print(f"[red]Error printing receipt or logging to Notion: {e}[/red]")
+        console.print(f"[red]Error printing apply-step receipt: {e}[/red]")
     
     return response
-

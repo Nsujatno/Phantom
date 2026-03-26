@@ -1,4 +1,4 @@
-Nathan Sujatno
+Nathan Sujatno | 210-629-2920 | Nathan.sujatno@gmail.com | Richardson, TX | github.com/Nsujatno | linkedin.com/in/nathan-sujatno | nathan-sujatno.vercel.app
 Experience:
 - Backend Project Lead & Frontend Developer at NRVE Intern, Remote (June 2025 – August 2025): Architected and deployed a serverless backend on AWS (Lambda, API Gateway, S3) and MongoDB with scalable RESTful API endpoints in Python. Cut database query latency by over 95% via AWS CloudFront caching. Integrated backend services with the mobile application frontend.
 

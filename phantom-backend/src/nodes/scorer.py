@@ -6,6 +6,8 @@ from src.state.graph_state import PipelineState
 from src.models.schemas import JobScore, ScoredJob, Job
 from src.core.config import settings
 
+PASSING_SCORE_THRESHOLD = 10
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_job_score(llm: ChatGoogleGenerativeAI, resume_text: str, job: dict) -> JobScore:
@@ -70,7 +72,7 @@ def score_jobs(state: PipelineState) -> PipelineState:
         score: JobScore = get_job_score(llm, resume_text, job_dict)
         state["current_score"] = score
 
-        if score.overall_score >= 10:
+        if score.overall_score >= PASSING_SCORE_THRESHOLD:
             print(f"  -> Passed! (Score: {score.overall_score})")
             job_obj = Job(
                 title=job_dict.get("title", ""),

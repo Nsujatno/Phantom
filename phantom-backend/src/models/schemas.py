@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Literal
 
 class JobScore(BaseModel):
@@ -28,14 +28,23 @@ class ScoredJob(BaseModel):
     score: JobScore
 
 class SerializedField(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     phantom_id: str
     name: str | None = None
     type: str
     value: str | None = None
     placeholder: str | None = None
-    label: str | None = None
+    label: str = Field(min_length=1)
     required: bool | None = False
     options: list[str] | None = None
+
+    @field_validator("label")
+    @classmethod
+    def label_must_not_be_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("label must not be empty")
+        return value
 
 class ApplyStepRequest(BaseModel):
     page_url: str | None = None

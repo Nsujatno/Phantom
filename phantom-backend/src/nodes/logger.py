@@ -1,5 +1,6 @@
 from src.state.graph_state import PipelineState
 from src.services.notion_service import NotionService
+from src.nodes.scorer import PASSING_SCORE_THRESHOLD
 
 notion = NotionService()
 
@@ -18,7 +19,7 @@ def log_to_notion(state: PipelineState) -> PipelineState:
     app_status = state.get("application_status")
 
     # Determine status
-    if not score or score.overall_score < 80:
+    if not score or score.overall_score < PASSING_SCORE_THRESHOLD:
         status = "Filtered"
     elif app_status == "success":
         status = "Applied"
