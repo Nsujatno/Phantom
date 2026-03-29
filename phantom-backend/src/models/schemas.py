@@ -17,7 +17,7 @@ class ValidationResult(BaseModel):
     status: Literal["pass", "fail", "flagged"]
     reasoning: str
     flagged_answers: list[str]
-    
+
 class Job(BaseModel):
     title: str
     company: str
@@ -35,9 +35,10 @@ class SerializedField(BaseModel):
     type: str
     value: str | None = None
     placeholder: str | None = None
-    label: str = Field(min_length=1)
+    label: str = Field(min_length=1)   # "__needs_inference__" when html_snippet is set
     required: bool | None = False
     options: list[str] | None = None
+    html_snippet: str | None = None    # sanitized outerHTML for label inference by LLM
 
     @field_validator("label")
     @classmethod
@@ -56,3 +57,5 @@ class ApplyStepResponse(BaseModel):
     reasoning: str | None = None
     answers: dict[str, str | bool | list[str]]
     next_action_id: str | None = None
+    upload_resume: bool = False
+    upload_field_id: str | None = None

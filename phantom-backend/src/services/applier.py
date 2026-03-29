@@ -9,7 +9,7 @@ from rich.table import Table
 
 console = Console()
 
-def print_application_receipt(url: str, title: str, answers: dict, fields: list, next_action_id: str = None, page_type: str = None, reasoning: str = None):
+def print_application_receipt(url: str, title: str, answers: dict, fields: list, next_action_id: str = None, page_type: str = None, reasoning: str = None, upload_resume: bool = False, upload_field_id: str = None):
     fields_map = {f.phantom_id: f for f in fields}
 
     extracted_table = Table(title="Extracted Fields", show_header=True, header_style="bold cyan")
@@ -20,7 +20,9 @@ def print_application_receipt(url: str, title: str, answers: dict, fields: list,
     extracted_table.add_column("Options", width=30)
 
     for field in fields:
-        label = field.label or field.placeholder or field.name or "Unknown"
+        label = "[inferred from HTML]" if field.label == "__needs_inference__" else (
+            field.label or field.placeholder or field.name or "Unknown"
+        )
         options = ", ".join(field.options or [])
         if field.phantom_id == next_action_id:
             label = f"{label} [SELECTED ACTION]"
@@ -59,6 +61,8 @@ def print_application_receipt(url: str, title: str, answers: dict, fields: list,
     console.print(answers_table)
     if reasoning:
         console.print(f"[cyan]Reasoning:[/cyan] {reasoning}")
+    if upload_resume and upload_field_id:
+        console.print(f"[magenta]File Upload:[/magenta] Injecting resume.pdf into element {upload_field_id}")
     console.print(f"[cyan]Next Action ID:[/cyan] {next_action_id or 'None'}")
     console.print()
 
@@ -90,11 +94,14 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
                    "1. You will receive a JSON list of form fields and actionable buttons/links extracted from the current page.\n"
                    "2. Identify the `page_type` (e.g. 'form' for input pages, 'review' for reviewing data, 'success' for completion, or 'unknown').\n"
                    "3. Provide `reasoning` for your choices.\n"
-                   "4. For each input field, provide the best answer based on the resume. Return a dictionary mapping the field's `phantom_id` to the corresponding answer in `answers`.\n"
-                   "5. For radio buttons or dropdowns, ensure your answer matches one of the provided `options`. Radio options may be represented as separate fields that share the same options list; choose the single `phantom_id` that corresponds to the desired option and return only that selected option.\n"
-                   "6. Provide polite placeholders for required unknown questions (e.g., '0' for salary, or 'Will discuss during interview').\n"
-                   "7. Identify the most appropriate button or link to click to proceed to the next step, and return its `phantom_id` in `next_action_id`. Examples of proceed buttons: 'Next', 'Continue', 'Submit', 'Apply'. Do not select 'Back' or 'Cancel'.\n"
-                   "8. Output EXACTLY the `ApplyStepResponse` schema."),
+                   "4. Some fields will have `label` set to `__needs_inference__` and an `html_snippet` field containing the raw HTML of that element. "
+                   "For these fields, infer the true question label from the HTML before generating an answer. Do not return `__needs_inference__` as an answer.\n"
+                   "5. For each input field, provide the best answer based on the resume. Return a dictionary mapping the field's `phantom_id` to the corresponding answer in `answers`.\n"
+                   "6. For radio buttons or dropdowns, ensure your answer matches one of the provided `options`. Radio options may be represented as separate fields that share the same options list; choose the single `phantom_id` that corresponds to the desired option and return only that selected option.\n"
+                   "7. Provide polite placeholders for required unknown questions (e.g., '0' for salary, or 'Will discuss during interview').\n"
+                   "8. If there is a file upload field specifically requesting a Resume/CV, set `upload_resume` to true and provide the field's `phantom_id` in `upload_field_id`. Do NOT do this for cover letters or other documents.\n"
+                   "9. Identify the most appropriate button or link to click to proceed to the next step, and return its `phantom_id` in `next_action_id`. Examples of proceed buttons: 'Next', 'Continue', 'Submit', 'Apply'. Do not select 'Back' or 'Cancel'.\n"
+                   "10. Output EXACTLY the `ApplyStepResponse` schema."),
         ("user", "PAGE TITLE: {page_title}\n\nFORM FIELDS AND ACTIONS:\n{fields}")
     ])
     
@@ -108,6 +115,13 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
         "page_title": request.page_title or "Unknown",
         "fields": fields_dump
     })
+
+    # Log any fields that required HTML label inference
+    inferred = [f for f in request.fields if f.label == "__needs_inference__"]
+    if inferred:
+        console.print(f"[yellow]⚠ {len(inferred)} field(s) required HTML label inference:[/yellow]")
+        for f in inferred:
+            console.print(f"  [dim]{f.phantom_id}[/dim] → snippet: {(f.html_snippet or '')[:80]}...")
     
     try:
         url = request.page_url or "Unknown URL"
@@ -116,7 +130,9 @@ def generate_answers_for_step(request: ApplyStepRequest) -> ApplyStepResponse:
             url, title, response.answers, request.fields, 
             next_action_id=response.next_action_id, 
             page_type=response.page_type,
-            reasoning=response.reasoning
+            reasoning=response.reasoning,
+            upload_resume=response.upload_resume,
+            upload_field_id=response.upload_field_id
         )
     except Exception as e:
         console.print(f"[red]Error printing apply-step receipt: {e}[/red]")

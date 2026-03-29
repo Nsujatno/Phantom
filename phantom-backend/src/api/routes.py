@@ -1,9 +1,11 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import json
 from src.api.socket_manager import manager
 from src.models.schemas import ApplyStepRequest, ApplyStepResponse
 from src.services.applier import generate_answers_for_step
+from pathlib import Path
 
 router = APIRouter()
 
@@ -33,6 +35,13 @@ async def process_apply_step(request: ApplyStepRequest):
     except Exception as e:
         print(f"Error in apply-step: {e}")
         return ApplyStepResponse(answers={})
+
+@router.get("/resume-file")
+async def get_resume_file():
+    path = Path(__file__).parent.parent.parent.parent / "resume.pdf"
+    if not path.exists():
+        print(f"resume.pdf not found at {path}")
+    return FileResponse(path, media_type="application/pdf", filename="resume.pdf")
 
 @router.websocket("/ws/scraper")
 async def websocket_scraper(websocket: WebSocket):

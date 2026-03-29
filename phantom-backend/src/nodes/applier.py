@@ -29,6 +29,7 @@ async def apply_to_job(state: PipelineState) -> PipelineState:
             state["application_status"] = "success"
         else:
             state["application_status"] = "failure"
+            print(f"  -> Failed/Skipped reason: {result.get('message', 'Unknown')}")
         
     except Exception as e:
         print(f"  -> Error leaping to apply to {job_dict.get('title')}: {e}")

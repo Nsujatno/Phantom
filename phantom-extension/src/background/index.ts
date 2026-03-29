@@ -116,6 +116,10 @@ async function handleReadJobPage(url: string) {
             }));
         }
     } finally {
+        // Close the read tab — extraction is complete and the tab is no longer needed.
+        if (tabId !== null) {
+            chrome.tabs.remove(tabId).catch(() => {});
+        }
         activeReadTabId = null;
     }
 }
@@ -141,21 +145,17 @@ async function handleAutoApply(url: string) {
             });
         });
 
-        console.log("Tab loaded. Waiting 2s for DOM and content script injection...");
-        await new Promise(r => setTimeout(r, 2000));
+        console.log("Tab loaded. Waiting 7s for DOM and content script injection...");
+        await new Promise(r => setTimeout(r, 7000));
 
-        // Signal content script to extract and fill!
-        // The content script (content_apply) listens for "extract_and_fill"
-        const result = await chrome.tabs.sendMessage(tabId, { action: "extract_and_fill" });
-        console.log("Apply result from content script:", result);
+        const result = await chrome.tabs.sendMessage(tabId, { action: "extract_and_fill" }).catch(e => ({ success: false, status: "error", message: String(e) }));
+        console.log("Apply result from content script (first pass):", result);
 
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-                status: "success",
-                type: "apply_result",
-                data: result
-            }));
+        if (result && !result.success && result.status !== "navigating" && result.status !== "filled") {
+            // Immediate failure on first load, close tab. The onRemoved listener will send the websocket response.
+            chrome.tabs.remove(tabId).catch(() => {});
         }
+        // DO NOT send socket result here. Wait for CLOSE_APPLY_TAB or tab closure.
         
     } catch (err) {
         console.error("handleAutoApply failed:", err);
@@ -166,10 +166,26 @@ async function handleAutoApply(url: string) {
                 message: String(err),
             }));
         }
-    } finally {
-        activeApplyTabId = null;
+        if (activeApplyTabId !== null) {
+            chrome.tabs.remove(activeApplyTabId).catch(() => {});
+            activeApplyTabId = null;
+        }
     }
 }
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+    if (tabId === activeApplyTabId) {
+        console.log("Apply tab was closed. Resolving active apply session.");
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                status: "success",
+                type: "apply_result",
+                data: { success: false, status: "aborted", message: "Tab was closed before application finished." }
+            }));
+        }
+        activeApplyTabId = null;
+    }
+});
 
 /**
  * Runs INSIDE the job page tab via executeScript.
@@ -231,6 +247,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         .catch(err => sendResponse({ error: String(err) }));
         
         return true; // Keep message channel open for async response
+    } else if (request.action === "CLOSE_APPLY_TAB") {
+        // Content script signals that the apply session is over (success or login wall).
+        if (activeApplyTabId !== null) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    status: "success",
+                    type: "apply_result",
+                    data: request.payload || { success: false, status: "aborted", message: "Tab closed programmatically" }
+                }));
+            }
+            // Temporarily nullify the id so the onRemoved listener doesn't fire a duplicate "aborted" message
+            const tabToClose = activeApplyTabId;
+            activeApplyTabId = null;
+            chrome.tabs.remove(tabToClose).catch(() => {});
+        }
+    } else if (request.action === "GET_CREDENTIALS") {
+        chrome.storage.local.get("credentials", (data) => {
+            const domain = request.domain;
+            const creds = data.credentials?.[domain] ?? null;
+            sendResponse({ creds });
+        });
+        return true;
+    } else if (request.action === "FETCH_RESUME_FILE") {
+        fetch("http://localhost:8000/resume-file")
+            .then(r => r.arrayBuffer())
+            .then(buf => {
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+                sendResponse({ base64 });
+            })
+            .catch(err => sendResponse({ error: String(err) }));
+        return true;
     }
     // "extracted_job_details" is intentionally NOT handled here any more — see handleReadJobPage.
 });

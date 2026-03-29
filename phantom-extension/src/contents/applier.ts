@@ -36,9 +36,10 @@ let isProcessing = false;
 interface SerializedField {
     phantom_id: string;
     type: string;
-    label: string;
+    label: string;          // "__needs_inference__" when html_snippet is set
     required: boolean;
     options?: string[];
+    html_snippet?: string;  // present only for low-confidence labels
 }
 
 interface AutoProcessResult {
@@ -53,6 +54,29 @@ interface AutoProcessResult {
 
 function normalizeText(value: string | null | undefined): string {
     return (value || "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Returns true when the label was either unresolvable or resolved only from
+ * the raw `name` attribute — both cases produce noise for the LLM.
+ */
+function isLowConfidenceLabel(label: string, el: Element): boolean {
+    if (label === "Unknown Field") return true;
+    const name = el.getAttribute("name") || "";
+    if (name && label === normalizeText(name)) return true;
+    return false;
+}
+
+/**
+ * Clones the element and strips any pre-filled values and hidden inputs
+ * before returning the outerHTML, so no session data leaks to the backend.
+ */
+function buildSanitizedSnippet(el: Element): string {
+    const clone = el.cloneNode(true) as Element;
+    clone.removeAttribute("value");
+    clone.querySelectorAll("[value]").forEach(child => child.removeAttribute("value"));
+    clone.querySelectorAll('input[type="hidden"]').forEach(h => h.remove());
+    return clone.outerHTML;
 }
 
 function isElementVisible(el: Element): boolean {
@@ -163,7 +187,7 @@ function getGroupedOptions(el: Element, type: string): string[] {
 }
 
 function findLauncherActionElement(): HTMLElement | null {
-    const candidates = Array.from(document.querySelectorAll("a[href], button, [role='button']")).filter(
+    const candidates = Array.from(document.querySelectorAll("a[href]:not([data-phantom-filled='true']), button:not([data-phantom-filled='true']), [role='button']:not([data-phantom-filled='true'])")).filter(
         (candidate) => isElementVisible(candidate) && !isElementDisabled(candidate)
     ) as HTMLElement[];
 
@@ -235,39 +259,27 @@ function findActionByLabel(label: string): HTMLElement | null {
     return null;
 }
 
+/**
+ * Triggers an element cleanly.
+ *
+ * WHY THIS MATTERS: The old approach fired pointerdown + mousedown + mouseup + click
+ * synthetic events AND called target.click() AND called window.location.assign.
+ * For anchor tags this produced 3 separate navigation attempts, which is why
+ * Workday (and other ATS) were opening multiple duplicate tabs with different
+ * session IDs. Now: anchors navigate via location.assign ONLY (no events needed);
+ * buttons receive a single synthetic click event.
+ */
 function triggerActionElement(el: HTMLElement): { clicked: boolean; method: string } {
     const target = findClickableTarget(el);
     target.scrollIntoView({ block: "center", inline: "center" });
     target.focus();
 
-    target.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true, view: window }));
-    target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-    target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    // Use the native .click() method. This guarantees React/SPA onClick handlers 
+    // fire allowing them to preventDefault() and run client-side routing,
+    // avoiding the "hard reload" bug caused by window.location.assign.
     target.click();
 
-    if (target instanceof HTMLAnchorElement) {
-        const href = target.href?.trim();
-        if (href && href !== "#" && !href.toLowerCase().startsWith("javascript:")) {
-            setTimeout(() => window.location.assign(href), 50);
-            return { clicked: true, method: "anchor-navigate" };
-        }
-    }
-
-    const nestedAnchor = target.querySelector?.("a[href]") || target.closest("a[href]");
-    if (nestedAnchor instanceof HTMLAnchorElement) {
-        const href = nestedAnchor.href?.trim();
-        if (href && href !== "#" && !href.toLowerCase().startsWith("javascript:")) {
-            setTimeout(() => window.location.assign(href), 50);
-            return { clicked: true, method: "nested-anchor-navigate" };
-        }
-    }
-
-    if (target instanceof HTMLButtonElement || target.getAttribute("role") === "button") {
-        return { clicked: true, method: "button-click" };
-    }
-
-    return { clicked: true, method: "element-click" };
+    return { clicked: true, method: target.tagName.toLowerCase() + "-click" };
 }
 
 /**
@@ -285,6 +297,12 @@ function extractFormFields(): { pageTitle: string, fields: SerializedField[] } {
         let type = el.getAttribute('type') || "";
 
         if (tagName === "input" && type.toLowerCase() === "hidden") {
+            return;
+        }
+
+        // Safety net: never include password fields — they belong to login/account
+        // creation pages which Phantom must not interact with.
+        if (tagName === "input" && type.toLowerCase() === "password") {
             return;
         }
 
@@ -345,12 +363,20 @@ function extractFormFields(): { pageTitle: string, fields: SerializedField[] } {
             componentType = type || "text";
         }
 
+        const resolvedLabel = normalizeText(labelText) || "Unknown Field";
+
         const fieldData: SerializedField = {
             phantom_id: phantomId,
             type: componentType,
-            label: normalizeText(labelText) || "Unknown Field",
+            label: resolvedLabel,
             required: isRequired
         };
+
+        // Override with sentinel + raw HTML for low-confidence labels
+        if (isLowConfidenceLabel(resolvedLabel, el)) {
+            fieldData.label = "__needs_inference__";
+            fieldData.html_snippet = buildSanitizedSnippet(el).slice(0, 800);
+        }
 
         // Extract options for selects
         if (tagName === "select") {
@@ -362,8 +388,9 @@ function extractFormFields(): { pageTitle: string, fields: SerializedField[] } {
                 fieldData.options = options;
             }
         }
-        
-        const isDuplicate = fields.some(existing =>
+
+        // Sentinel fields are never deduped against each other (each has a unique phantom_id)
+        const isDuplicate = fieldData.label !== "__needs_inference__" && fields.some(existing =>
             existing.type === fieldData.type &&
             existing.label === fieldData.label
         );
@@ -382,7 +409,7 @@ function extractFormFields(): { pageTitle: string, fields: SerializedField[] } {
 /**
  * Fills the DOM based on a mapping of { phantom_id: string_value } and clicks next_action_id
  */
-function fillFormFields(response: any): { filledCount: number; clicked: boolean; nextActionId?: string; clickMethod?: string; clickError?: string } {
+async function fillFormFields(response: any): Promise<{ filledCount: number; clicked: boolean; nextActionId?: string; clickMethod?: string; clickError?: string }> {
     let filledCount = 0;
     let clicked = false;
     let clickMethod: string | undefined;
@@ -417,6 +444,26 @@ function fillFormFields(response: any): { filledCount: number; clicked: boolean;
             // Mark as filled so we don't process it again
             el.setAttribute('data-phantom-filled', 'true');
             filledCount += 1;
+        }
+    }
+
+    if (response.upload_resume && response.upload_field_id) {
+        console.log("Phantom is uploading resume to field:", response.upload_field_id);
+        const { base64, error } = await chrome.runtime.sendMessage({ action: "FETCH_RESUME_FILE" });
+        if (base64) {
+            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+            const file = new File([bytes], "resume.pdf", { type: "application/pdf" });
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            const el = document.querySelector(`[data-phantom-id="${response.upload_field_id}"]`);
+            if (el instanceof HTMLInputElement && el.type === "file") {
+                el.files = dt.files;
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+                el.setAttribute('data-phantom-filled', 'true');
+                filledCount += 1;
+            }
+        } else if (error) {
+            console.error("Failed to fetch resume:", error);
         }
     }
 
@@ -460,6 +507,27 @@ function fillFormFields(response: any): { filledCount: number; clicked: boolean;
 
 // Function to automatically orchestrate the extraction and filling
 async function autoProcessForm(): Promise<AutoProcessResult> {
+    // Cross-origin iframe guard (stops YouTube embed etc.)
+    if (window.self !== window.top) {
+        const urlLow = window.location.href.toLowerCase();
+        const isKnownATS = [
+            "greenhouse.io", "lever.co", "workday.com", "myworkdayjobs.com", 
+            "workable.com", "smartrecruiters.com", "breezy.hr", "applytojob.com", 
+            "icims.com", "ashbyhq.com", "rippling-ats.com", "jobvite.com", 
+            "indeed.com"
+        ].some(domain => urlLow.includes(domain));
+        
+        if (!isKnownATS) {
+            return {
+                success: false,
+                status: "skipped",
+                page_title: document.title,
+                field_count: 0,
+                message: "Skipped unknown cross-origin iframe."
+            };
+        }
+    }
+
     if (isProcessing) {
         return {
             success: false,
@@ -503,6 +571,70 @@ async function autoProcessForm(): Promise<AutoProcessResult> {
             message: "No valid actionable elements found."
         };
     }
+
+    // ── Credential Injection / Login Wall Guard ──────
+    const visiblePasswordFields = Array.from(
+        document.querySelectorAll<HTMLInputElement>('input[type="password"]')
+    ).filter(el => isElementVisible(el) && !isElementDisabled(el));
+
+    if (visiblePasswordFields.length > 0) {
+        const domain = window.location.hostname.replace(/^www\./, "");
+        const { creds } = await chrome.runtime.sendMessage({ action: "GET_CREDENTIALS", domain });
+
+        if (creds) {
+            console.log("Phantom: Found stored credentials, filling login wall...");
+            const emailEl = document.querySelector<HTMLInputElement>(
+                'input[type="email"], input[name*="email"], input[autocomplete="email"], input[name*="username"], input[type="text"]'
+            );
+            const passwordEl = visiblePasswordFields[0];
+            
+            if (emailEl) { 
+                emailEl.value = creds.email; 
+                emailEl.dispatchEvent(new Event("input", { bubbles: true })); 
+                emailEl.dispatchEvent(new Event("change", { bubbles: true })); 
+            }
+            if (passwordEl) { 
+                passwordEl.value = creds.password; 
+                passwordEl.dispatchEvent(new Event("input", { bubbles: true })); 
+                passwordEl.dispatchEvent(new Event("change", { bubbles: true })); 
+            }
+            
+            const signInBtn = findActionByLabel("sign in") ?? findActionByLabel("log in") ?? findActionByLabel("submit") ?? findActionByLabel("continue") ?? findActionByLabel("next");
+            let clickResult = false;
+            let clickMethod = "";
+            if (signInBtn) {
+                const result = triggerActionElement(signInBtn);
+                clickResult = result.clicked;
+                clickMethod = result.method;
+            }
+
+            return { 
+                success: true, 
+                status: "navigating", 
+                page_title: document.title, 
+                field_count: 2, 
+                message: `Credentials filled from storage. clicked:${clickResult} (${clickMethod})` 
+            };
+        }
+
+        console.warn("Phantom: Password fields detected but no credentials saved for", domain);
+        chrome.runtime.sendMessage({ 
+            action: "CLOSE_APPLY_TAB", 
+            payload: {
+                success: false,
+                status: "skipped",
+                message: `Login/account-creation page detected. No credentials saved for ${domain}.`
+            }
+        });
+        return {
+            success: false,
+            status: "skipped",
+            page_title: document.title || "Form Page",
+            field_count: 0,
+            message: `Login/account-creation page detected. No credentials saved for ${domain}.`
+        };
+    }
+    // ──────────────────────────────────────────────────
 
     isProcessing = true;
     console.log(`Found ${validElements.length} unfilled/unclicked actionable elements. Triggering auto-fill...`);
@@ -577,8 +709,22 @@ async function autoProcessForm(): Promise<AutoProcessResult> {
                 }
             });
 
-            if (response && (response.answers || response.next_action_id)) {
-                const fillResult = fillFormFields(response);
+            if (response && (response.answers || response.next_action_id || response.upload_resume)) {
+                const fillResult = await fillFormFields(response);
+
+                // Application complete — signal background to close the tab.
+                if (response.page_type === "success") {
+                    console.log("Phantom: Application marked success. Closing tab.");
+                    chrome.runtime.sendMessage({ 
+                        action: "CLOSE_APPLY_TAB",
+                        payload: {
+                            success: true,
+                            status: "success",
+                            message: "Application submitted successfully."
+                        }
+                    });
+                }
+
                 return {
                     success: fillResult.clicked || fillResult.filledCount > 0,
                     status: fillResult.clicked ? "navigating" : "filled",
@@ -621,7 +767,7 @@ async function autoProcessForm(): Promise<AutoProcessResult> {
 }
 
 // Run initially after a short delay to let the page settle
-setTimeout(autoProcessForm, 2500);
+setTimeout(autoProcessForm, 6000);
 
 let observerTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -651,8 +797,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const data = extractFormFields();
         sendResponse(data);
     } else if (message.action === "FILL_FIELDS") {
-        fillFormFields(message.response || message);
-        sendResponse({ success: true });
+        fillFormFields(message.response || message).then(() => sendResponse({ success: true }));
+        return true;
     } else if (message.action === "extract_and_fill") {
         autoProcessForm().then(sendResponse).catch(err => sendResponse({ success: false, status: "error", error: String(err) }));
         return true;

@@ -66,7 +66,7 @@ function getMeaningfulInputs(): Element[] {
 }
 
 function findLauncherAction(): HTMLElement | null {
-    const candidates = Array.from(document.querySelectorAll("a[href], button, [role='button']"))
+    const candidates = Array.from(document.querySelectorAll("a[href]:not([data-phantom-filled='true']), button:not([data-phantom-filled='true']), [role='button']:not([data-phantom-filled='true'])"))
         .filter(isVisible) as HTMLElement[];
 
     const strongPatterns = [
